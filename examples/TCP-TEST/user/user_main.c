@@ -33,13 +33,46 @@
 
 uint8 buffer[256]="0123456789";
 
+
+/*void scan_done(void *arg, STATUS status)
+{
+	uint8 ssid[33];
+	char temp[128];
+	if (status == OK)
+	{
+		struct bss_info *bss_link = (struct bss_info *)arg;
+		bss_link = bss_link->next.stqe_next;//ignore the first one , it's invalid.
+		while (bss_link != NULL)
+		{
+			memset(ssid, 0, 33);
+			if (strlen(bss_link->ssid) <= 32)
+				memcpy(ssid, bss_link->ssid, strlen(bss_link->ssid));
+			else
+				memcpy(ssid, bss_link->ssid, 32);
+			printf("(%d,\"%s\",%d,\""MACSTR"\",%d)\r\n",
+			bss_link->authmode, ssid, bss_link->rssi,
+			MAC2STR(bss_link->bssid),bss_link->channel);
+			bss_link = bss_link->next.stqe_next;
+		}
+	}
+	else
+	{
+		printf("scan fail !!!\r\n");
+	}
+}*/
+	
 void task2(void *pvParameters)
 {
 	struct station_config * config = (struct station_config *)zalloc(sizeof(struct station_config));
+	struct scan_config config2;
 	LOCAL int32 sock_fd;
 	struct sockaddr_in server_addr;
 	//struct hostent *host;
 	
+	
+	/*memset(&config2, 0, sizeof(config2));
+	config2.ssid = DEMO_AP_SSID;
+	wifi_station_scan(&config2,scan_done);*/
 	
 	//printf("Hello, welcome to task2!\r\n");
 	wifi_set_opmode(STATION_MODE);
@@ -49,8 +82,9 @@ void task2(void *pvParameters)
 	free(config);
 	wifi_station_connect();
 	
+	
 	vTaskDelay(1000);
-	printf("start udp ... \n");
+	printf("start TCP ... \n");
 	//host=(struct hostent *)gethostbyname("192.168.0.247");
 	memset(&server_addr, 0, sizeof(server_addr));
 	server_addr.sin_family = AF_INET;
@@ -79,6 +113,7 @@ void task2(void *pvParameters)
 		//printf("Hello\r\n");
 		sendto(sock_fd, buffer, sizeof(buffer),0,(struct sockaddr *)&server_addr,sizeof(struct sockaddr));
 		//vTaskDelay(50);
+		//recv(sock_fd, buffer, sizeof(buffer),0);
 	}
 	vTaskDelete(NULL);
 }
@@ -93,6 +128,6 @@ void user_init(void)
 	uart_init_new();
     printf("SDK version:%s\n", system_get_sdk_version());
 	
-	xTaskCreate(task2, "tsk2", 1024, NULL, 2, NULL);
+	xTaskCreate(task2, "tsk2", 512, NULL, 2, NULL);
 }
 
