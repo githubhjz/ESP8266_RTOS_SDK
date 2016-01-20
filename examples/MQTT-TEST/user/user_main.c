@@ -23,44 +23,30 @@
  */
 
 #include "esp_common.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "freertos/queue.h"
+#include "freertos/timers.h"
 #include "uart.h"
 #include "lwip/sockets.h"
 #include "lwip/dns.h"
 #include "lwip/netdb.h"
 #include "MQTTClient.h"
+#include "stdio.h"
 
 #define DEMO_AP_SSID "TP-LINK_AE9170"
 #define DEMO_AP_PASSWORD "2014HGKJ"
 
-uint8 buffer[256]="0123456789";
-
-
-/*void scan_done(void *arg, STATUS status)
+typedef struct
 {
-	uint8 ssid[33];
-	char temp[128];
-	if (status == OK)
-	{
-		struct bss_info *bss_link = (struct bss_info *)arg;
-		bss_link = bss_link->next.stqe_next;//ignore the first one , it's invalid.
-		while (bss_link != NULL)
-		{
-			memset(ssid, 0, 33);
-			if (strlen(bss_link->ssid) <= 32)
-				memcpy(ssid, bss_link->ssid, strlen(bss_link->ssid));
-			else
-				memcpy(ssid, bss_link->ssid, 32);
-			printf("(%d,\"%s\",%d,\""MACSTR"\",%d)\r\n",
-			bss_link->authmode, ssid, bss_link->rssi,
-			MAC2STR(bss_link->bssid),bss_link->channel);
-			bss_link = bss_link->next.stqe_next;
-		}
-	}
-	else
-	{
-		printf("scan fail !!!\r\n");
-	}
-}*/
+	unsigned char	type;
+	unsigned char  size;
+	unsigned char  buff[128];
+}mq_typedef;//message queue
+
+//uint8 buffer[256]="0123456789";
+char topic_uart0_tx[]  = "/Dust/T/XXXXXXXXXXXX/1",topic_uart0_rx[] ="/Dust/R/XXXXXXXXXXXX/1";
+
 struct opts_struct//client opts
 {
     char* clientid;
@@ -74,14 +60,24 @@ struct opts_struct//client opts
     int showtopics;
 } opts =
 {
-    (char*)"IoT GateWay ", 0, (char*)"\n", QOS2, NULL, NULL, (char*)"192.168.1.102", 1883, 0
+    (char*)"IoT GateWay WL ", 0, (char*)"\n", QOS2, NULL, NULL, (char*)"192.168.1.102", 1883, 0
 };
 
 Network n;//server net
-Client c;//client
+static Client c;//client
+xTimerHandle xTimer;//mqtt port timer
+static unsigned char mqtt_state = 0,old_mqtt_state = 0;//
+MQTTMessage send_messge= {QOS0,0,10};//send buffer;
+xQueueHandle xQueueUart0;//
 
+void vTimerCallback( xTimerHandle pxTimer )
+{
+	extern unsigned long MilliTimer;
+	
+	MilliTimer += 10;
+}
 
-void mqtt_task(void *pvParameters)
+void mqtt_pub_task(void *pvParameters)
 {
 	//wifi
 	struct station_config * config = (struct station_config *)zalloc(sizeof(struct station_config));
@@ -89,7 +85,12 @@ void mqtt_task(void *pvParameters)
 	//mqtt
 	unsigned char *sendbuf,*readbuf;
 	int rc = 0;
-	
+	//mqtt port timer
+	int32_t x=1;
+	//send buffer
+	unsigned char *send=(unsigned char *)pvPortMalloc(128);
+	unsigned int test=0;
+	mq_typedef uart0rcv;
 	//connet wifi
 	wifi_set_opmode(STATION_MODE);
 	sprintf(config->ssid, DEMO_AP_SSID);
@@ -99,6 +100,14 @@ void mqtt_task(void *pvParameters)
 	wifi_station_connect();
 	vTaskDelay(200);
 	printf("wifi connect\n"); 
+	//mqtt timer
+	xTimer = xTimerCreate(    "Timer",       // Just a text name, not used by the kernel.
+						    1,   // The timer period in ticks.
+							pdTRUE,        // The timers will auto-reload themselves when they expire.
+							( void * ) x,  // Assign each timer a unique id equal to its array index.
+							vTimerCallback // Each timer calls the same callback when it expires.
+						  );
+	xTimerStart( xTimer, 0 );
 	//mqtt
 	sendbuf = (unsigned char *)pvPortMalloc(128);
 	readbuf = (unsigned char *)pvPortMalloc(128);
@@ -119,70 +128,81 @@ void mqtt_task(void *pvParameters)
 	
 	rc = MQTTConnect(&c, &data);
 	printf("Connecting to %s %d err :%d\n", opts.host, opts.port,rc); 
-	
+	mqtt_state = 1;
+	vTaskDelay(80);
 	while(1)
 	{
+		xQueueReceive(xQueueUart0,&uart0rcv,portMAX_DELAY);
 		
-		vTaskDelay(1000/portTICK_RATE_MS);
+		send_messge.payload 	= uart0rcv.buff;
+		send_messge.payloadlen 	= uart0rcv.size;//strlen(send);
+		rc = MQTTPublish(&c,topic_uart0_tx,&send_messge);
+		if(rc)
+		{	
+			mqtt_state = 0;
+			old_mqtt_state = 0;
+			MQTTDisconnect(&c);
+			printf("pub ,errno:%d\n",errno);			
+			//net_disconnect(&n);				
+			ConnectNetwork(&n, opts.host, opts.port);
+			MQTTClient(&c, &n, 10, sendbuf, sizeof(sendbuf), readbuf, sizeof(readbuf));
+			rc = MQTTConnect(&c, &data);
+			printf("connecting to %s %d err :%d\n", opts.host, opts.port,rc); 
+			
+			if(0 == rc)
+				mqtt_state = 1;
+		}	
+		//vTaskDelay(200);
 	}
 	
 }
-	
-void task2(void *pvParameters)
+
+
+void uart0_sub_message_arrived(MessageData* md)
 {
-	struct station_config * config = (struct station_config *)zalloc(sizeof(struct station_config));
-	struct scan_config config2;
-	LOCAL int32 sock_fd;
-	struct sockaddr_in server_addr;
-	//struct hostent *host;
-	
-	
-	/*memset(&config2, 0, sizeof(config2));
-	config2.ssid = DEMO_AP_SSID;
-	wifi_station_scan(&config2,scan_done);*/
-	
-	//printf("Hello, welcome to task2!\r\n");
-	wifi_set_opmode(STATION_MODE);
-	sprintf(config->ssid, DEMO_AP_SSID);
-	sprintf(config->password, DEMO_AP_PASSWORD);
-	wifi_station_set_config(config);
-	free(config);
-	wifi_station_connect();
-	
-	
-	vTaskDelay(1000);
-	printf("start TCP ... \n");
-	//host=(struct hostent *)gethostbyname("192.168.0.247");
-	memset(&server_addr, 0, sizeof(server_addr));
-	server_addr.sin_family = AF_INET;
-	server_addr.sin_addr.s_addr =  inet_addr("192.168.1.102");//;*((struct in_addr *)host->h_addr);
-	server_addr.sin_port = htons(8080);
-	server_addr.sin_len = sizeof(server_addr);
-	
-	do{
-		sock_fd = socket(AF_INET, SOCK_STREAM, 0);
-		if (sock_fd == -1) 
+    MQTTMessage* message = md->message;
+    if (opts.showtopics)
+        printf("%.*s\t", md->topicName->lenstring.len, md->topicName->lenstring.data);
+    if (opts.nodelimiter)
+        printf("%.*s", (int)message->payloadlen, (char*)message->payload);
+    else
+	{
+       // printf("%.*s%s", (int)message->payloadlen, (char*)message->payload, opts.delimiter);
+	   //printf("%s", (char*)message->payload);
+	   uart0Send((char*)message->payload,message->payloadlen);
+	}
+}	
+void mqtt_sub_task(void *pvParameters)
+{
+	int rc = 0;
+	while(1)
+	{
+		if(mqtt_state)
 		{
-			//printf("ESP8266 UDP task > failed to create sock!\n");
-			vTaskDelay(1000/portTICK_RATE_MS);
+			if(!old_mqtt_state)
+			{
+				//topic_rx
+				printf("Subscribing to %s\n", topic_uart0_rx);
+				rc = MQTTSubscribe(&c, topic_uart0_rx, opts.qos, uart0_sub_message_arrived);
+				printf("Subscribed %d\n", rc);
+				if(rc)
+				{	
+					rc = MQTTSubscribe(&c, topic_uart0_rx, opts.qos, uart0_sub_message_arrived);
+					printf("Re-Subscribed %d\n", rc);
+				}
+				
+				old_mqtt_state = 1;			
+			}//*/
+			MQTTYield(&c, 4);
+			//vTaskDelay(2);
 		}
-	}while(sock_fd == -1);
-	
-	if (0 !=connect(sock_fd, (struct sockaddr *)(&server_addr), sizeof(struct sockaddr_in)))
-	{	
-		printf("ESP8266 TCP client task > connect fail!\n");
-	}
-	else
-		printf("ESP8266 TCP client task > connect suceess!\n");
+		else
+		{
+			vTaskDelay(100);
+			printf("sub idle\n");
+		}
 		
-	while (1) 
-	{		
-		//printf("Hello\r\n");
-		sendto(sock_fd, buffer, sizeof(buffer),0,(struct sockaddr *)&server_addr,sizeof(struct sockaddr));
-		//vTaskDelay(50);
-		//recv(sock_fd, buffer, sizeof(buffer),0);
 	}
-	vTaskDelete(NULL);
 }
 /******************************************************************************
  * FunctionName : user_init
@@ -195,8 +215,12 @@ void user_init(void)
 	uart_init_new();
     printf("SDK version:%s\n", system_get_sdk_version());
 	
+	//queue
+	xQueueUart0 = xQueueCreate( 2, sizeof(mq_typedef) );
+	//task
 	//xTaskCreate(task2, "tsk2", 512, NULL, 2, NULL);
-	xTaskCreate(mqtt_task, "mqtt", 512, NULL, 2, NULL);
+	xTaskCreate(mqtt_pub_task, "mqtt_pub", 512, NULL, 2, NULL);
+	xTaskCreate(mqtt_sub_task, "mqtt_sub", 512, NULL, 2, NULL);
 	
 }
 

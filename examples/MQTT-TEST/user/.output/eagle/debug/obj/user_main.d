@@ -76,6 +76,9 @@
  /home/esp8266/Share/ESP8266_RTOS_SDK/include/espressif/smartconfig.h \
  /home/esp8266/Share/ESP8266_RTOS_SDK/include/espressif/spi_flash.h \
  /home/esp8266/Share/ESP8266_RTOS_SDK/include/espressif/pwm.h \
+ /home/esp8266/Share/ESP8266_RTOS_SDK/include/freertos/queue.h \
+ /home/esp8266/Share/ESP8266_RTOS_SDK/include/freertos/timers.h \
+ /home/esp8266/Share/ESP8266_RTOS_SDK/include/freertos/task.h \
  ../include/uart.h \
  /home/esp8266/Share/ESP8266_RTOS_SDK/include/lwip/lwip/sockets.h \
  /home/esp8266/Share/ESP8266_RTOS_SDK/include/lwip/ipv4/lwip/inet.h \

@@ -279,6 +279,8 @@ void UART_SetLineInverse(UART_Port uart_no, UART_LineLevelInverse inverse_mask) 
   */
 void uart_init_new(void);
 
+void uart0Send(unsigned char * buffer,unsigned int len);//zhj
+
 /**
   * @}
   */

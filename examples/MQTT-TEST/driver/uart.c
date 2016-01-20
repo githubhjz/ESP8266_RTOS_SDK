@@ -30,6 +30,7 @@
 
 #include "uart.h"
 
+
 enum {
     UART_EVENT_RX_CHAR,
     UART_EVENT_MAX
@@ -345,6 +346,16 @@ UART_IntrConfig(UART_Port uart_no,  UART_IntrConfTypeDef *pUARTIntrConf)
     SET_PERI_REG_MASK(UART_INT_ENA(uart_no), pUARTIntrConf->UART_IntrEnMask);
 }
 
+//user
+extern xQueueHandle xQueueUart0;//
+typedef struct
+{
+	unsigned char	type;
+	unsigned char  size;
+	unsigned char  buff[128];
+}mq_typedef;//message queue
+mq_typedef uart0rcv;
+//end user
 LOCAL void
 uart0_rx_intr_handler(void *para)
 {
@@ -356,6 +367,7 @@ uart0_rx_intr_handler(void *para)
     uint8 fifo_len = 0;
     uint8 buf_idx = 0;
     uint8 fifo_tmp[128] = {0};
+	portBASE_TYPE xHigherPriorityTaskWoken=pdFALSE;
 
     uint32 uart_intr_status = READ_PERI_REG(UART_INT_ST(uart_no)) ;
 
@@ -364,26 +376,35 @@ uart0_rx_intr_handler(void *para)
             //printf("FRM_ERR\r\n");
             WRITE_PERI_REG(UART_INT_CLR(uart_no), UART_FRM_ERR_INT_CLR);
         } else if (UART_RXFIFO_FULL_INT_ST == (uart_intr_status & UART_RXFIFO_FULL_INT_ST)) {
-            printf("full\r\n");
+           // printf("full\r\n");
             fifo_len = (READ_PERI_REG(UART_STATUS(UART0)) >> UART_RXFIFO_CNT_S)&UART_RXFIFO_CNT;
             buf_idx = 0;
-
+			
+			uart0rcv.type = 0;
             while (buf_idx < fifo_len) {
-                uart_tx_one_char(UART0, READ_PERI_REG(UART_FIFO(UART0)) & 0xFF);
+                //uart_tx_one_char(UART0, READ_PERI_REG(UART_FIFO(UART0)) & 0xFF);
+				uart0rcv.buff[buf_idx] = READ_PERI_REG(UART_FIFO(UART0)) & 0xFF;
                 buf_idx++;
             }
+			uart0rcv.size = buf_idx;
+			xQueueSendFromISR(xQueueUart0,&uart0rcv,&xHigherPriorityTaskWoken);
 
             WRITE_PERI_REG(UART_INT_CLR(UART0), UART_RXFIFO_FULL_INT_CLR);
         } else if (UART_RXFIFO_TOUT_INT_ST == (uart_intr_status & UART_RXFIFO_TOUT_INT_ST)) {
-            printf("tout\r\n");
+           // printf("tout\r\n");
             fifo_len = (READ_PERI_REG(UART_STATUS(UART0)) >> UART_RXFIFO_CNT_S)&UART_RXFIFO_CNT;
             buf_idx = 0;
 
+			uart0rcv.type = 0;
             while (buf_idx < fifo_len) {
-                uart_tx_one_char(UART0, READ_PERI_REG(UART_FIFO(UART0)) & 0xFF);
+                //uart_tx_one_char(UART0, READ_PERI_REG(UART_FIFO(UART0)) & 0xFF);
+				//fifo_tmp[buf_idx] = READ_PERI_REG(UART_FIFO(UART0);
+				uart0rcv.buff[buf_idx] = READ_PERI_REG(UART_FIFO(UART0)) & 0xFF;
                 buf_idx++;
             }
-
+			uart0rcv.size = buf_idx;
+			xQueueSendFromISR(xQueueUart0,&uart0rcv,&xHigherPriorityTaskWoken);
+			
             WRITE_PERI_REG(UART_INT_CLR(UART0), UART_RXFIFO_TOUT_INT_CLR);
         } else if (UART_TXFIFO_EMPTY_INT_ST == (uart_intr_status & UART_TXFIFO_EMPTY_INT_ST)) {
             printf("empty\n\r");
@@ -415,7 +436,7 @@ uart_init_new(void)
 
     UART_IntrConfTypeDef uart_intr;
     uart_intr.UART_IntrEnMask = UART_RXFIFO_TOUT_INT_ENA | UART_FRM_ERR_INT_ENA | UART_RXFIFO_FULL_INT_ENA | UART_TXFIFO_EMPTY_INT_ENA;
-    uart_intr.UART_RX_FifoFullIntrThresh = 10;
+    uart_intr.UART_RX_FifoFullIntrThresh = 127;
     uart_intr.UART_RX_TimeOutIntrThresh = 2;
     uart_intr.UART_TX_FifoEmptyIntrThresh = 20;
     UART_IntrConfig(UART0, &uart_intr);
@@ -432,4 +453,11 @@ uart_init_new(void)
     UART_SetFlowCtrl(UART0,USART_HardwareFlowControl_None,0);
     */
 
+}
+
+void uart0Send(unsigned char * buffer,unsigned int len)
+{
+	unsigned int i=0;
+	for(i=0;i<len;i++)
+		uart_tx_one_char(UART0,buffer[i]);
 }

@@ -1,5 +1,2 @@
----- uart_init_new Matches (4 in 4 files) ----
-Uart.c (d:\vm\share\esp8266_rtos_sdk\examples\driver_lib\driver):uart_init_new(void)
-Uart.c (d:\vm\share\esp8266_rtos_sdk\examples\project_template\driver):uart_init_new(void)
-Uart.h (d:\vm\share\esp8266_rtos_sdk\examples\driver_lib\include):void uart_init_new(void);
-Uart.h (d:\vm\share\esp8266_rtos_sdk\examples\project_template\include):void uart_init_new(void);
+---- xPortSysTickHandle Matches (1 in 1 files) ----
+Port.c (d:\vm\share\esp8266_rtos_sdk\third_party\freertos):void xPortSysTickHandle (void)
